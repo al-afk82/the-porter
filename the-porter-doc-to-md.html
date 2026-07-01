@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>doc → md · intake bench</title>
+
+<!-- Conversion libraries (loaded from CDN; needs internet on first use, then browser-cached) -->
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/turndown@7.2.0/dist/turndown.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/turndown-plugin-gfm@1.0.2/dist/turndown-plugin-gfm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --ink:#0f131a; --panel:#161b24; --panel-2:#1c222d;
+    --line:#2a3340; --line-soft:#222a36;
+    --text:#dce3ed; --muted:#8a94a6; --muted-2:#5e6878;
+    --amber:#e6a94e; --amber-dim:#b9842f;
+    --teal:#57b6a4; --red:#d97a6c;
+    --paper:#f4f1e9; --paper-ink:#23272e; --paper-line:#ddd6c4;
+    --sans:'Inter',ui-sans-serif,system-ui,sans-serif;
+    --display:'Space Grotesk',var(--sans);
+    --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(1200px 600px at 70% -10%, #19202b 0%, transparent 60%),
+      var(--ink);
+    color:var(--text); font-family:var(--sans); line-height:1.5;
+    min-height:100vh; padding:32px 20px 64px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:940px;margin:0 auto}
+
+  /* Header */
+  .masthead{display:flex;align-items:baseline;justify-content:space-between;gap:16px;
+    padding-bottom:18px;border-bottom:1px solid var(--line);margin-bottom:26px;flex-wrap:wrap}
+  .mark{display:flex;align-items:center;gap:12px}
+  .porter-avatar{width:40px;height:40px;border-radius:50%;object-fit:cover;flex:0 0 auto;
+    box-shadow:0 0 0 3px rgba(230,169,78,.16),0 0 16px 1px rgba(230,169,78,.4)}
+  .beacon{width:13px;height:13px;border-radius:50%;background:var(--amber);
+    box-shadow:0 0 0 4px rgba(230,169,78,.13),0 0 18px 2px rgba(230,169,78,.45);flex:0 0 auto}
+  .wordmark{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:-.01em}
+  .wordmark .arrow{color:var(--amber);margin:0 2px}
+  .tagline{font-family:var(--mono);font-size:11.5px;color:var(--muted);letter-spacing:.02em}
+  .tagline b{color:var(--text);font-weight:500}
+  .backlink{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:12px;
+    color:var(--muted);text-decoration:none;margin-bottom:16px;
+    border:1px solid var(--line-soft);border-radius:20px;padding:5px 13px;transition:color .15s,border-color .15s}
+  .backlink:hover{color:var(--amber);border-color:var(--amber-dim)}
+  .backlink .x{color:var(--amber);font-weight:600}
+
+  /* Dropzone */
+  .bench{position:relative;border:1px solid var(--line);border-radius:14px;
+    background:linear-gradient(180deg,var(--panel) 0%,#13181f 100%);overflow:hidden}
+  .drop{position:relative;padding:46px 28px 40px;text-align:center;cursor:pointer;
+    transition:background .18s ease}
+  .drop:hover{background:rgba(230,169,78,.03)}
+  .drop.drag{background:rgba(230,169,78,.07)}
+  .drop .glyph{font-family:var(--display);font-weight:600;font-size:17px;margin-bottom:6px}
+  .drop .glyph .arrow{color:var(--amber)}
+  .drop .sub{color:var(--muted);font-size:13.5px;margin-bottom:18px}
+  .formats{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;max-width:560px;margin:0 auto}
+  .fmt{font-family:var(--mono);font-size:11px;color:var(--muted);
+    border:1px solid var(--line-soft);border-radius:5px;padding:3px 8px;background:#10151c}
+  /* signal baseline — lights on drag/convert */
+  .baseline{height:2px;background:var(--line);position:relative;overflow:hidden}
+  .baseline::after{content:"";position:absolute;inset:0;width:38%;
+    background:linear-gradient(90deg,transparent,var(--amber),transparent);
+    transform:translateX(-120%);opacity:0}
+  .bench.busy .baseline::after{opacity:1;animation:sweep 1.15s linear infinite}
+  .drop.drag ~ .baseline{background:var(--amber-dim)}
+  @keyframes sweep{to{transform:translateX(360%)}}
+
+  /* Options row */
+  .controls{display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    padding:14px 18px;border-top:1px solid var(--line-soft);background:#11161d}
+  .opt{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none}
+  .opt input{accent-color:var(--amber);width:15px;height:15px;cursor:pointer}
+  .controls .spacer{flex:1}
+  .btn{font-family:var(--sans);font-size:13px;font-weight:500;color:var(--text);
+    background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
+    padding:8px 14px;cursor:pointer;transition:border-color .15s,background .15s}
+  .btn:hover{border-color:var(--muted-2)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn.primary{background:var(--amber);color:#1a1206;border-color:var(--amber);font-weight:600}
+  .btn.primary:hover{background:#f0b65e}
+  .btn.ghost{background:transparent}
+
+  /* Queue */
+  .queue{margin-top:22px;display:flex;flex-direction:column;gap:1px;
+    border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--line-soft)}
+  .row{display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:14px;
+    padding:13px 16px;background:var(--panel)}
+  .row:hover{background:var(--panel-2)}
+  .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .dot.wait{background:var(--muted-2)}
+  .dot.work{background:var(--amber);box-shadow:0 0 0 3px rgba(230,169,78,.18);animation:pulse 1s ease-in-out infinite}
+  .dot.done{background:var(--teal)}
+  .dot.err{background:var(--red)}
+  @keyframes pulse{50%{opacity:.4}}
+  .fname{font-family:var(--mono);font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .meta{font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .meta.bad{color:var(--red)}
+  .rowbtn{font-family:var(--mono);font-size:11.5px;color:var(--amber);background:none;border:1px solid var(--line);
+    border-radius:6px;padding:5px 9px;cursor:pointer;white-space:nowrap}
+  .rowbtn:hover{border-color:var(--amber-dim)}
+  .rowbtn:disabled{color:var(--muted-2);border-color:var(--line-soft);cursor:default}
+  .rowacts{display:flex;gap:10px;align-items:center}
+  .route-hint{font-family:var(--mono);font-size:11px;color:var(--muted-2);white-space:nowrap}
+  .rowbtn.route{color:#1a1206;background:var(--amber);border-color:var(--amber);
+    font-weight:700;font-size:12.5px;padding:7px 16px}
+  .rowbtn.route:hover:not(:disabled){background:#f0b65e;border-color:#f0b65e}
+  .rowbtn.route:disabled{background:transparent;color:var(--muted-2);
+    border-color:var(--line-soft);font-weight:400}
+
+  .empty{padding:30px 16px;text-align:center;color:var(--muted-2);font-size:13px;background:var(--panel)}
+
+  /* Preview — paper card */
+  .preview{margin-top:30px}
+  .preview-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+  .pv-file{font-family:var(--mono);font-size:12.5px;color:var(--amber)}
+  .preview-head .spacer{flex:1}
+  .toggle{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .toggle button{font-family:var(--mono);font-size:11.5px;color:var(--muted);background:transparent;
+    border:0;padding:5px 11px;cursor:pointer}
+  .toggle button.on{background:var(--panel-2);color:var(--text)}
+  .mini{font-family:var(--mono);font-size:11.5px;color:var(--muted);background:none;border:1px solid var(--line);
+    border-radius:6px;padding:5px 10px;cursor:pointer}
+  .mini:hover{border-color:var(--muted-2)}
+  .paper{background:var(--paper);color:var(--paper-ink);border-radius:10px;
+    box-shadow:0 18px 40px -18px rgba(0,0,0,.6),0 0 0 1px var(--paper-line);
+    padding:30px 32px;max-height:520px;overflow:auto}
+  .paper pre{margin:0;font-family:var(--mono);font-size:12.5px;line-height:1.7;
+    white-space:pre-wrap;word-break:break-word;color:#2c3138}
+  .paper .yaml{color:#9a7b34}
+  /* rendered markdown */
+  .md h1,.md h2,.md h3{font-family:var(--display);line-height:1.25;margin:1.1em 0 .5em}
+  .md h1{font-size:25px;border-bottom:1px solid var(--paper-line);padding-bottom:.25em}
+  .md h2{font-size:20px} .md h3{font-size:16px}
+  .md p,.md li{font-family:var(--sans);font-size:14.5px;color:#33383f}
+  .md code{font-family:var(--mono);font-size:12.5px;background:#e8e3d4;padding:1px 5px;border-radius:4px}
+  .md table{border-collapse:collapse;margin:1em 0;font-size:13px}
+  .md th,.md td{border:1px solid var(--paper-line);padding:6px 11px;text-align:left}
+  .md th{background:#ece6d6;font-weight:600}
+  .md blockquote{border-left:3px solid var(--amber);margin:1em 0;padding-left:14px;color:#5a5346}
+
+  .foot{margin-top:34px;padding-top:18px;border-top:1px solid var(--line-soft);
+    font-family:var(--mono);font-size:11px;color:var(--muted-2);line-height:1.7}
+  .foot b{color:var(--muted)}
+  .hidden{display:none!important}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#333c49;border-radius:6px;border:2px solid var(--ink)}
+  .paper::-webkit-scrollbar-thumb{background:#cdc6b2;border-color:var(--paper)}
+
+  /* ---- Routing demo ---- */
+  .demo{margin-top:42px;padding-top:28px;border-top:1px solid var(--line)}
+  .demo-head{margin-bottom:20px}
+  .demo-sub{display:block;margin-top:8px;color:var(--muted);font-size:13px;max-width:700px;line-height:1.6}
+  .demo-sub b{color:var(--text);font-weight:600}
+  .demo-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+  @media(max-width:720px){.demo-grid{grid-template-columns:1fr}}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}
+  .chip{font-family:var(--mono);font-size:11.5px;color:var(--muted);background:#10151c;
+    border:1px solid var(--line-soft);border-radius:20px;padding:5px 12px;cursor:pointer;transition:.15s}
+  .chip:hover{border-color:var(--amber-dim);color:var(--text)}
+  .demo-input{width:100%;min-height:158px;resize:vertical;font-family:var(--mono);font-size:12.5px;
+    line-height:1.6;color:var(--text);background:#10151c;border:1px solid var(--line);
+    border-radius:10px;padding:13px 14px;outline:none}
+  .demo-input:focus{border-color:var(--amber-dim)}
+  #routeBtn{margin-top:14px;width:100%;font-size:15.5px;font-weight:700;padding:14px 18px;
+    letter-spacing:.01em;border-radius:10px;
+    transition:transform .14s ease,box-shadow .14s ease,background .14s ease;
+    box-shadow:0 0 0 4px rgba(230,169,78,.10),0 10px 26px -12px rgba(230,169,78,.55)}
+  #routeBtn:hover{transform:translateY(-1px);
+    box-shadow:0 0 0 4px rgba(230,169,78,.16),0 14px 30px -12px rgba(230,169,78,.7)}
+  .route-desc{margin:11px 2px 0;font-size:12px;color:var(--muted);line-height:1.55}
+  .route-desc b{color:var(--text);font-weight:600}
+  .tree-label{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--muted-2);margin-bottom:10px}
+  .tree{font-family:var(--mono);font-size:12.5px}
+  .tree-area{padding:8px 11px;border:1px solid var(--line-soft);border-radius:8px;margin-bottom:6px;
+    background:#10151c;transition:border-color .25s,background .25s}
+  .tree-area .caret{color:var(--muted-2);margin-right:2px}
+  .tree-area .aname{color:var(--text)}
+  .tree-area .path{color:var(--muted-2)}
+  .tree-area.lit{border-color:var(--amber);background:rgba(230,169,78,.08)}
+  .tree-area.lit .caret,.tree-area.lit .aname{color:var(--amber)}
+  .tree-area .landed{display:block;margin-top:7px;padding-left:18px;color:var(--teal);
+    font-size:11.5px;animation:land .38s ease}
+  .tree-area .landed em{color:var(--muted);font-style:normal;margin-left:7px}
+  @keyframes land{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+  .demo-out{margin-top:22px}
+  .route-reason{font-size:13px;color:var(--text);background:var(--panel-2);border:1px solid var(--line);
+    border-left:3px solid var(--amber);border-radius:8px;padding:11px 14px;margin-bottom:14px;line-height:1.55}
+  .route-reason b{color:var(--amber);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <a class="backlink" href="the-porter.html"><span class="x">←</span> The Porter</a>
+
+  <header class="masthead">
+    <div class="mark">
+      <svg class="porter-avatar" viewBox="0 0 40 40" role="img" aria-label="The Porter — goatherd">
+        <circle cx="20" cy="20" r="19" fill="#13181f" stroke="#e6a94e" stroke-width="1.4"/>
+        <!-- horns -->
+        <path d="M17,15 C13,13 9,15 9,19" fill="none" stroke="#b9842f" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M23,15 C27,13 31,15 31,19" fill="none" stroke="#b9842f" stroke-width="2.2" stroke-linecap="round"/>
+        <!-- ears -->
+        <path d="M13,21 C10,21 8.6,23 9,25 C11,24.4 12.6,24 13.8,23 Z" fill="#c8923a"/>
+        <path d="M27,21 C30,21 31.4,23 31,25 C29,24.4 27.4,24 26.2,23 Z" fill="#c8923a"/>
+        <!-- face -->
+        <path d="M20,13 C15.5,13 12.6,17 12.6,22 C12.6,28 16,33 20,33 C24,33 27.4,28 27.4,22 C27.4,17 24.5,13 20,13 Z" fill="#e6a94e"/>
+        <!-- eyes -->
+        <ellipse cx="17.2" cy="22" rx="1" ry="1.3" fill="#13181f"/>
+        <ellipse cx="22.8" cy="22" rx="1" ry="1.3" fill="#13181f"/>
+        <!-- muzzle + beard -->
+        <path d="M18.5,28.5 Q20,30 21.5,28.5" fill="none" stroke="#b9842f" stroke-width="1" stroke-linecap="round"/>
+        <path d="M18.4,32.5 L20,37.5 L21.6,32.5 Z" fill="#c8923a"/>
+      </svg>
+      <span class="beacon"></span>
+      <span class="wordmark">doc<span class="arrow">→</span>md</span>
+    </div>
+    <div class="tagline">intake bench · <b>drop a document, take the markdown</b></div>
+  </header>
+
+  <section class="bench" id="bench">
+    <div class="drop" id="drop">
+      <input type="file" id="file" multiple class="hidden"
+        accept=".docx,.pdf,.xlsx,.xls,.csv,.tsv,.pptx,.html,.htm,.txt,.md,.markdown,.png,.jpg,.jpeg,.webp,.bmp">
+      <div class="glyph">Drop files <span class="arrow">→</span> or click to browse</div>
+      <div class="sub">Converts in your browser. Nothing is uploaded anywhere.</div>
+      <div class="formats">
+        <span class="fmt">.docx</span><span class="fmt">.pdf</span><span class="fmt">.xlsx</span>
+        <span class="fmt">.csv</span><span class="fmt">.pptx</span><span class="fmt">.html</span>
+        <span class="fmt">.txt / .md</span><span class="fmt">images → OCR</span>
+      </div>
+    </div>
+    <div class="baseline"></div>
+    <div class="controls">
+      <label class="opt"><input type="checkbox" id="fm" checked> YAML metadata header</label>
+      <label class="opt"><input type="checkbox" id="ocr"> OCR images &amp; scanned PDFs</label>
+      <div class="spacer"></div>
+      <button class="btn ghost" id="clear" disabled>Clear</button>
+      <button class="btn primary" id="dlall" disabled>Download all (.zip)</button>
+    </div>
+  </section>
+
+  <div class="queue" id="queue">
+    <div class="empty" id="empty">No files yet — drop something on the bench above.</div>
+  </div>
+
+  <section class="preview hidden" id="preview">
+    <div class="preview-head">
+      <span class="eyebrow">Preview</span>
+      <span class="pv-file" id="pvFile"></span>
+      <div class="spacer"></div>
+      <div class="toggle">
+        <button id="tRaw" class="on">Raw</button>
+        <button id="tRendered">Rendered</button>
+      </div>
+      <button class="mini" id="copy">Copy</button>
+    </div>
+    <div class="paper"><pre id="pvRaw"></pre><div class="md hidden" id="pvMd"></div></div>
+  </section>
+
+  <section class="demo" id="demo">
+    <div class="demo-head">
+      <span class="eyebrow">Routing demo</span>
+      <span class="demo-sub">Type or paste a note — or pick a sample — and watch it become a <b>.md</b> file and land in the right area's <b>00-inbox/</b>. This is a <b>deterministic preview</b> of what the Porter does; the live sort uses Claude's judgment (with an API key, once hosted) to handle the ambiguous cases this rules-only demo can't.</span>
+    </div>
+    <div class="demo-grid">
+      <div class="demo-left">
+        <div class="chips" id="samples"></div>
+        <textarea id="demoText" class="demo-input" placeholder="Paste or type a note…  (e.g. a standup log, a recipe, a draft, an idea)"></textarea>
+        <button class="btn primary" id="routeBtn">Route it →</button>
+        <p class="route-desc">Converts the note to <b>.md</b>, stamps it, and shows which area's <b>00-inbox/</b> it lands in — all in your browser, nothing uploaded.</p>
+      </div>
+      <div class="demo-right">
+        <div class="tree-label">workspace / areas /</div>
+        <div class="tree" id="tree"></div>
+      </div>
+    </div>
+    <div class="demo-out hidden" id="demoOut">
+      <div class="route-reason" id="reason"></div>
+      <div class="paper"><pre id="demoMd"></pre></div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <b>How it works:</b> docx → mammoth + turndown · xlsx/csv → SheetJS tables · pdf → pdf.js text · pptx → slide-text via JSZip · images/scans → tesseract OCR (loads on first use).<br>
+    <b>Won't handle:</b> legacy binary .doc / .ppt / .xls — save those as .docx/.pptx/.xlsx first, or use the Python skill version.
+  </div>
+
+</div>
+
+<script>
+"use strict";
+(function(){
+  // ---- library setup -------------------------------------------------------
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+  }
+  const td = new TurndownService({headingStyle:"atx", codeBlockStyle:"fenced", bulletListMarker:"-"});
+  if (window.turndownPluginGfm) td.use(turndownPluginGfm.gfm);
+
+  // ---- state ---------------------------------------------------------------
+  const items = [];            // {file, name, status, md, engine, words, error}
+  let selected = -1;
+  let tesseractLoading = null;
+
+  const $ = id => document.getElementById(id);
+  const queueEl=$("queue"), emptyEl=$("empty"), benchEl=$("bench");
+  const dlAll=$("dlall"), clearBtn=$("clear");
+  const previewEl=$("preview"), pvFile=$("pvFile"), pvRaw=$("pvRaw"), pvMd=$("pvMd");
+
+  // ---- helpers -------------------------------------------------------------
+  const ext = n => (n.split(".").pop()||"").toLowerCase();
+  const stem = n => n.replace(/\.[^.]+$/,"");
+  const today = () => new Date().toISOString().slice(0,10);
+  const wordCount = s => (s.trim().match(/\S+/g)||[]).length;
+
+  function clean(md){
+    return md.replace(/\r\n?/g,"\n").replace(/[ \t]+\n/g,"\n")
+             .replace(/\n{3,}/g,"\n\n").trim()+"\n";
+  }
+  function frontmatter(name, engine, words){
+    return "---\n"+
+      "source_file: "+name+"\n"+
+      "source_type: "+(ext(name)||"unknown")+"\n"+
+      "converted: "+today()+"\n"+
+      "converter: doc-to-markdown (browser)\n"+
+      "engine: "+engine+"\n"+
+      "word_count: "+words+"\n---\n\n";
+  }
+  function buf(file){ return file.arrayBuffer(); }
+  function text(file){ return file.text(); }
+
+  function aoaToMarkdown(rows){
+    rows = rows.map(r => (r||[]).map(c => c==null ? "" : String(c).replace(/\n/g," ").trim()))
+               .filter(r => r.some(c => c!==""));
+    if(!rows.length) return "";
+    const w = Math.max.apply(null, rows.map(r=>r.length));
+    rows = rows.map(r => r.concat(Array(w-r.length).fill("")));
+    const head = rows[0], body = rows.slice(1);
+    let out = "| "+head.join(" | ")+" |\n| "+Array(w).fill("---").join(" | ")+" |\n";
+    body.forEach(r => out += "| "+r.join(" | ")+" |\n");
+    return out;
+  }
+  function parseCSV(str, delim){
+    const rows=[]; let row=[], cur="", q=false;
+    for(let i=0;i<str.length;i++){
+      const c=str[i];
+      if(q){ if(c==='"'){ if(str[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c; }
+      else if(c==='"') q=true;
+      else if(c===delim){ row.push(cur); cur=""; }
+      else if(c==="\n"){ row.push(cur); rows.push(row); row=[]; cur=""; }
+      else if(c==="\r"){ /* skip */ }
+      else cur+=c;
+    }
+    if(cur!==""||row.length){ row.push(cur); rows.push(row); }
+    return rows;
+  }
+
+  // mammoth/html tables often have no header row (all <td>), which the GFM
+  // turndown rule skips — leaving raw HTML. Promote the first row to a header
+  // and unwrap lone <p> in cells so tables convert cleanly.
+  function normalizeTables(html){
+    const box=document.createElement("div"); box.innerHTML=html;
+    box.querySelectorAll("table").forEach(table=>{
+      table.querySelectorAll("td,th").forEach(cell=>{
+        if(cell.children.length===1 && cell.firstElementChild.tagName==="P")
+          cell.innerHTML=cell.firstElementChild.innerHTML;
+      });
+      if(table.querySelector("thead")) return;
+      const firstRow=table.querySelector("tr"); if(!firstRow) return;
+      [...firstRow.children].forEach(c=>{
+        if(c.tagName==="TD"){ const th=document.createElement("th"); th.innerHTML=c.innerHTML; c.replaceWith(th); }
+      });
+      const thead=document.createElement("thead"); thead.appendChild(firstRow);
+      table.insertBefore(thead, table.firstChild);
+    });
+    return box.innerHTML;
+  }
+
+  // ---- per-format converters ----------------------------------------------
+  async function convDocx(file){
+    const {value} = await mammoth.convertToHtml({arrayBuffer: await buf(file)});
+    return {md: td.turndown(normalizeTables(value)), engine:"mammoth+turndown"};
+  }
+  async function convHtml(file){
+    return {md: td.turndown(normalizeTables(await text(file))), engine:"turndown"};
+  }
+  async function convText(file){
+    return {md: await text(file), engine:"passthrough"};
+  }
+  async function convCsv(file, delim){
+    const rows = parseCSV(await text(file), delim);
+    return {md: aoaToMarkdown(rows), engine:"csv"};
+  }
+  async function convXlsx(file){
+    const wb = XLSX.read(await buf(file), {type:"array"});
+    const parts = wb.SheetNames.map(name=>{
+      const aoa = XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, blankrows:false});
+      const tbl = aoaToMarkdown(aoa);
+      return tbl ? "## "+name+"\n\n"+tbl : "";
+    }).filter(Boolean);
+    return {md: parts.join("\n\n"), engine:"sheetjs"};
+  }
+  async function convPptx(file){
+    const zip = await JSZip.loadAsync(await buf(file));
+    const names = Object.keys(zip.files)
+      .filter(n=>/^ppt\/slides\/slide\d+\.xml$/.test(n))
+      .sort((a,b)=> (+a.match(/(\d+)/)[1]) - (+b.match(/(\d+)/)[1]));
+    const parser = new DOMParser();
+    const slides = [];
+    for(let i=0;i<names.length;i++){
+      const xml = await zip.files[names[i]].async("string");
+      const doc = parser.parseFromString(xml,"application/xml");
+      const runs = [...doc.getElementsByTagName("a:t")].map(n=>n.textContent.trim()).filter(Boolean);
+      let body = "";
+      if(runs.length){ body = "## "+runs[0]+"\n\n"+runs.slice(1).map(r=>"- "+r).join("\n"); }
+      slides.push("<!-- slide "+(i+1)+" -->\n\n"+body);
+    }
+    return {md: slides.join("\n\n"), engine:"jszip"};
+  }
+  async function convPdf(file, ocr){
+    const data = await buf(file);
+    const pdf = await pdfjsLib.getDocument({data}).promise;
+    const pages=[]; let chars=0;
+    for(let p=1;p<=pdf.numPages;p++){
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      // reconstruct lines by y-position
+      const lines = new Map();
+      content.items.forEach(it=>{
+        const y = Math.round(it.transform[5]);
+        if(!lines.has(y)) lines.set(y,[]);
+        lines.get(y).push(it.str);
+      });
+      const ys=[...lines.keys()].sort((a,b)=>b-a);
+      const txt = ys.map(y=>lines.get(y).join(" ").replace(/\s+/g," ").trim())
+                    .filter(Boolean).join("\n");
+      chars += txt.length;
+      pages.push("<!-- page "+p+" -->\n\n"+txt);
+    }
+    if(ocr && chars < 40*pdf.numPages){
+      const ocrText = await ocrPdf(pdf);
+      if(ocrText.trim()) return {md: ocrText, engine:"tesseract"};
+    }
+    return {md: pages.join("\n\n"), engine:"pdf.js"};
+  }
+  async function ocrPdf(pdf){
+    await loadTesseract();
+    const out=[];
+    for(let p=1;p<=pdf.numPages;p++){
+      const page = await pdf.getPage(p);
+      const vp = page.getViewport({scale:2});
+      const cv = document.createElement("canvas");
+      cv.width=vp.width; cv.height=vp.height;
+      await page.render({canvasContext:cv.getContext("2d"), viewport:vp}).promise;
+      const {data:{text}} = await Tesseract.recognize(cv, "eng");
+      out.push("<!-- page "+p+" (OCR) -->\n\n"+text.trim());
+    }
+    return out.join("\n\n");
+  }
+  async function convImage(file){
+    await loadTesseract();
+    const {data:{text}} = await Tesseract.recognize(file, "eng");
+    return {md: text, engine:"tesseract"};
+  }
+  function loadTesseract(){
+    if(window.Tesseract) return Promise.resolve();
+    if(tesseractLoading) return tesseractLoading;
+    tesseractLoading = new Promise((res,rej)=>{
+      const s=document.createElement("script");
+      s.src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+      s.onload=res; s.onerror=()=>rej(new Error("could not load OCR engine"));
+      document.head.appendChild(s);
+    });
+    return tesseractLoading;
+  }
+
+  // ---- routing -------------------------------------------------------------
+  async function convertItem(item){
+    const e = ext(item.name);
+    const ocr = $("ocr").checked;
+    const images = ["png","jpg","jpeg","webp","bmp","gif","tiff","tif"];
+    if(e==="docx") return convDocx(item.file);
+    if(["html","htm"].includes(e)) return convHtml(item.file);
+    if(["txt","md","markdown"].includes(e)) return convText(item.file);
+    if(e==="csv") return convCsv(item.file, ",");
+    if(e==="tsv") return convCsv(item.file, "\t");
+    if(["xlsx","xls","xlsm"].includes(e)) return convXlsx(item.file);
+    if(e==="pptx") return convPptx(item.file);
+    if(e==="pdf") return convPdf(item.file, ocr);
+    if(images.includes(e)){
+      if(["doc","ppt","xls"].includes(e)) throw new Error("legacy binary format");
+      return convImage(item.file);
+    }
+    if(["doc","ppt","xls"].includes(e)) throw new Error("legacy binary — save as .docx/.pptx/.xlsx first");
+    throw new Error("unsupported type ."+e);
+  }
+
+  // ---- pipeline ------------------------------------------------------------
+  async function run(){
+    benchEl.classList.add("busy");
+    for(const item of items){
+      if(item.status!=="wait") continue;
+      item.status="work"; render();
+      try{
+        const {md, engine} = await convertItem(item);
+        const body = clean(md||"");
+        item.engine = engine;
+        item.words = wordCount(body);
+        const head = $("fm").checked ? frontmatter(item.name, engine, item.words) : "";
+        item.md = head + body;
+        item.status = "done";
+        if(selected<0){ selected = items.indexOf(item); showPreview(); }
+      }catch(err){
+        item.status="err"; item.error = err.message || String(err);
+      }
+      render();
+    }
+    benchEl.classList.remove("busy");
+    updateActions();
+  }
+
+  // ---- rendering -----------------------------------------------------------
+  function statusMeta(it){
+    if(it.status==="wait") return "queued";
+    if(it.status==="work") return "converting…";
+    if(it.status==="err") return "✕ "+it.error;
+    return it.words+" words · "+it.engine;
+  }
+  function render(){
+    emptyEl.classList.toggle("hidden", items.length>0);
+    [...queueEl.querySelectorAll(".row")].forEach(r=>r.remove());
+    items.forEach((it,i)=>{
+      const row=document.createElement("div"); row.className="row";
+      const cls = it.status==="wait"?"wait":it.status==="work"?"work":it.status==="err"?"err":"done";
+      const en = it.status==="done"?"":"disabled";
+      row.innerHTML =
+        '<span class="dot '+cls+'"></span>'+
+        '<span class="fname"></span>'+
+        '<span class="meta'+(it.status==="err"?" bad":"")+'"></span>'+
+        '<span class="rowacts">'+
+          '<span class="route-hint">sort it into an area →</span>'+
+          '<button class="rowbtn route" '+en+'>Route</button>'+
+        '</span>';
+      row.querySelector(".fname").textContent = it.name;
+      row.querySelector(".meta").textContent = statusMeta(it);
+      const routeBtn=row.querySelector(".route");
+      if(it.status==="done"){
+        row.style.cursor="pointer";
+        row.addEventListener("click",e=>{ if(e.target!==routeBtn){ selected=i; showPreview(); }});
+        routeBtn.addEventListener("click",e=>{ e.stopPropagation();
+          if(window.Porter){
+            window.Porter.showRouting(it.md, stem(it.name)+".md");
+            const out=document.getElementById("demoOut");
+            if(out) out.scrollIntoView({behavior:"smooth", block:"start"});
+          }
+        });
+      }
+      queueEl.appendChild(row);
+    });
+    updateActions();
+  }
+  function updateActions(){
+    const done = items.filter(i=>i.status==="done").length;
+    dlAll.disabled = done===0;
+    dlAll.textContent = done>1 ? "Download all (.zip)" : "Download .md";
+    clearBtn.disabled = items.length===0;
+  }
+  let view="raw";
+  function showPreview(){
+    const it = items[selected]; if(!it||it.status!=="done") return;
+    previewEl.classList.remove("hidden");
+    pvFile.textContent = stem(it.name)+".md";
+    renderPreview(it);
+  }
+  function renderPreview(it){
+    if(view==="raw"){
+      pvRaw.classList.remove("hidden"); pvMd.classList.add("hidden");
+      pvRaw.innerHTML="";
+      // tint the YAML header
+      const m = it.md.match(/^---\n[\s\S]*?\n---\n/);
+      if(m){
+        const y=document.createElement("span"); y.className="yaml"; y.textContent=m[0];
+        pvRaw.appendChild(y);
+        pvRaw.appendChild(document.createTextNode(it.md.slice(m[0].length)));
+      } else { pvRaw.textContent = it.md; }
+    } else {
+      pvRaw.classList.add("hidden"); pvMd.classList.remove("hidden");
+      const noFm = it.md.replace(/^---\n[\s\S]*?\n---\n/,"");
+      pvMd.innerHTML = window.marked ? marked.parse(noFm) : noFm;
+    }
+  }
+
+  // ---- downloads -----------------------------------------------------------
+  function saveBlob(blob, filename){
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }
+  function downloadOne(it){
+    saveBlob(new Blob([it.md],{type:"text/markdown"}), stem(it.name)+".md");
+  }
+  async function downloadAll(){
+    const done = items.filter(i=>i.status==="done");
+    if(done.length===1){ downloadOne(done[0]); return; }
+    const zip=new JSZip(); const used={};
+    done.forEach(it=>{
+      let name=stem(it.name)+".md";
+      if(used[name]){ name=stem(it.name)+"-"+(used[name]++)+".md"; } else used[name]=1;
+      zip.file(name, it.md);
+    });
+    saveBlob(await zip.generateAsync({type:"blob"}), "markdown-export.zip");
+  }
+
+  // ---- intake --------------------------------------------------------------
+  function addFiles(fileList){
+    [...fileList].forEach(f=> items.push({file:f, name:f.name, status:"wait"}));
+    render(); run();
+  }
+  const drop=$("drop"), fileInput=$("file");
+  drop.addEventListener("click",()=>fileInput.click());
+  fileInput.addEventListener("change",e=>{ addFiles(e.target.files); fileInput.value=""; });
+  ;["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{
+    e.preventDefault(); drop.classList.add("drag");
+  }));
+  ;["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{
+    e.preventDefault(); if(ev==="drop"||!drop.contains(e.relatedTarget)) drop.classList.remove("drag");
+  }));
+  drop.addEventListener("drop",e=>{ if(e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+
+  // ---- controls ------------------------------------------------------------
+  dlAll.addEventListener("click",downloadAll);
+  clearBtn.addEventListener("click",()=>{
+    items.length=0; selected=-1; previewEl.classList.add("hidden"); render();
+  });
+  $("copy").addEventListener("click",()=>{
+    const it=items[selected]; if(!it) return;
+    navigator.clipboard.writeText(it.md);
+    const b=$("copy"); b.textContent="Copied"; setTimeout(()=>b.textContent="Copy",1200);
+  });
+  $("tRaw").addEventListener("click",()=>{ view="raw"; $("tRaw").classList.add("on"); $("tRendered").classList.remove("on"); if(selected>=0) renderPreview(items[selected]); });
+  $("tRendered").addEventListener("click",()=>{ view="rendered"; $("tRendered").classList.add("on"); $("tRaw").classList.remove("on"); if(selected>=0) renderPreview(items[selected]); });
+  // re-stamp headers live when the metadata toggle flips
+  $("fm").addEventListener("change",()=>{
+    items.forEach(it=>{
+      if(it.status!=="done") return;
+      const body = it.md.replace(/^---\n[\s\S]*?\n---\n/,"");
+      it.md = ($("fm").checked ? frontmatter(it.name, it.engine, it.words) : "") + body;
+    });
+    if(selected>=0) renderPreview(items[selected]);
+  });
+
+  render();
+})();
+</script>
+
+<script>
+"use strict";
+// ---- Routing demo (deterministic preview of the Porter sort) --------------
+(function(){
+  const $ = id => document.getElementById(id);
+  const AREAS = ["active-projects","ideas","reference","drafts","logs","archive","_unsorted"];
+  const tree=$("tree"), demoOut=$("demoOut"), reasonEl=$("reason"), demoMd=$("demoMd"), demoText=$("demoText");
+
+  const SAMPLES = [
+    {label:"Dated standup", text:
+`# Standup — Jun 24
+
+- Me: finished the auth refactor, starting the redesign nav today.
+- Priya: blocked on the API key, pinging infra.
+- Sam: QA on checkout, found two bugs.
+
+Next standup Thursday.`},
+    {label:"Recipe", text:
+`# Chicken curry (the good one)
+
+Serves 4. Onion, garlic, ginger, curry powder, coconut milk, chicken thigh.
+Simmer 25 min, serve with rice. Don't lose this one.`},
+    {label:"Draft post", text:
+`# DRAFT: What we learned shipping the new search
+
+Status: rough draft, not published. For the company blog once the launch settles.
+Still need to tighten the intro and pull real numbers.`},
+    {label:"Pricing decision", text:
+`# Competitor pricing teardown
+
+Settling our own pricing tiers — the decision is live this week.
+Competitor A is $19/$49, B is a flat $39. I'll want to re-check these next quarter too.`},
+    {label:"Idea", text:
+`# Idea: voice input?
+
+Random thought — what if the app had voice capture for quick notes?
+Not building it, not committed, just don't want to lose the thought. Someday-maybe.`},
+    {label:"Postmortem", text:
+`# Postmortem — checkout outage
+
+Status: RESOLVED. Writing this up so we don't repeat it next quarter.
+Re-read this before the next big config change.`}
+  ];
+
+  // mirrors the rules.md cascade + tie-breakers
+  function route(text){
+    const t = text.toLowerCase();
+    const firstLine = (text.trim().split("\n")[0]||"").replace(/^#+\s*/,"").trim();
+    const sig = {
+      log:      /(standup|stand-up|\bsync\b|1:1|one-on-one|meeting notes|attendees|next standup|next sync|daily log|journal)/.test(t),
+      finished: /(postmortem|post-mortem|\bretro\b|retrospective|\bresolved\b|done and out|shipped last)/.test(t),
+      reread:   /(re-?read|next time|don'?t repeat|before the next|consult)/.test(t),
+      draft:    /(draft|\bwip\b|work in progress|rough draft|unpublished|not published|still writing)/.test(t),
+      idea:     /(idea[:?]|what if|someday|some-day|random thought|not building|not committed)/.test(t),
+      lookup:   /(cheat ?sheet|look ?up|shortcut|\bregex\b|patterns i|keep for lookup)/.test(t),
+      personal: /(recipe|\bmeal\b|grocery|\bgym\b|workout|\bdream\b|\btax\b|errand|household|dentist|appointment|fitness|curry)/.test(t),
+      active:   /(launch|project|deadline|\bship\b|building|\bactive\b|deliver|\bq[1-4]\b|budget|roadmap|sprint|decision is live|this week)/.test(t),
+      laterRef: /(re-?check|next quarter|keep this|for reference)/.test(t)
+    };
+
+    let area, confidence="clear", note="—", why="";
+
+    if(sig.personal){
+      area="_unsorted"; confidence="low"; note="proposed-new-area → personal";
+      why="Personal life-admin — it looks actionable, but no work area is a home for it. Parked and proposing a \"personal\" area rather than forcing it into active-projects.";
+    } else if(sig.log){
+      area="logs"; if(sig.active) note="touches active-projects too";
+      why="A dated record of a moment. It reads like active work — that's the trap — so the log tie-breaker routes it to logs, not active-projects.";
+    } else if(sig.finished){
+      if(sig.reread){ area="reference"; why="A finished item kept to be consulted again (\"re-read before the next one\") → reference, not archive."; }
+      else { area="archive"; why="Finished and kept only for the record, unlikely to be reopened → archive."; }
+    } else if(sig.draft){
+      area="drafts"; if(sig.active) note="touches active-projects too";
+      why="In-progress writing, explicitly not finished → drafts. Any project overlap is noted, not split.";
+    } else if(sig.idea){
+      area="ideas";
+      why="Half-formed, not committed, someday-maybe → ideas.";
+    } else if(sig.lookup){
+      area="reference";
+      why="Kept-for-lookup material you'll consult later → reference.";
+    } else if(sig.active){
+      area="active-projects";
+      if(sig.reread||sig.laterRef){ confidence="low"; note="touches reference too";
+        why="Driving a live decision now → active-projects. The \"re-check later\" pull is a real reference signal, so it's flagged low and noted, not split."; }
+      else why="Work you're actively pushing forward now → active-projects.";
+    } else {
+      area="_unsorted"; confidence="low"; note="no clear fit — propose an area";
+      why="Nothing clearly fits. Parked in _unsorted rather than forced into a wrong pile — propose a new area.";
+    }
+    return {area, confidence, note, why, is: summarize(firstLine, text)};
+  }
+
+  function summarize(firstLine, text){
+    let s = firstLine || text.trim().split(/\s+/).slice(0,8).join(" ");
+    s = s.replace(/^draft:?\s*/i,"").replace(/[#*_`>]/g,"").trim();
+    if(s.length>60) s = s.slice(0,57)+"…";
+    return s ? s.charAt(0).toLowerCase()+s.slice(1) : "a note";
+  }
+  function slug(firstLine){
+    let s = (firstLine||"note").toLowerCase().replace(/^draft:?\s*/i,"")
+              .replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,42);
+    return (s||"note")+".md";
+  }
+  // writes the porter stamp into front-matter — merging into existing front-matter, never above it
+  function buildMd(text, r){
+    const stew = "porter:\n  is: "+r.is+"\n  area: "+r.area+
+                 "\n  confidence: "+r.confidence+"\n  note: "+r.note+"\n";
+    const t = text.trim();
+    const m = t.match(/^---\n([\s\S]*?)\n---\n?/);
+    if(m){
+      const merged = "---\n"+m[1].replace(/\s+$/,"")+"\n"+stew+"---\n";
+      return merged + "\n" + t.slice(m[0].length).replace(/^\n+/,"") + "\n";
+    }
+    return "---\n"+stew+"---\n\n"+t+"\n";
+  }
+
+  function renderTree(r, fname){
+    tree.innerHTML = AREAS.map(a=>{
+      const lit = a===r.area;
+      return '<div class="tree-area'+(lit?" lit":"")+'">'+
+        '<span class="caret">'+(lit?"▼":"▸")+'</span>'+
+        '<span class="aname">'+a+'</span><span class="path">/00-inbox/</span>'+
+        (lit?'<span class="landed">↳ '+fname+'<em>'+r.confidence+'</em></span>':"")+
+      '</div>';
+    }).join("");
+  }
+
+  // shared: route + render. Used by the text demo AND the dropped-file queue.
+  function showRouting(text, fname){
+    text = (text||"").trim();
+    if(!text) return;
+    // route on the body — ignore any leading front-matter (e.g. the converter's source header)
+    const body = text.replace(/^---\n[\s\S]*?\n---\n?/,"").trim() || text;
+    const r = route(body);
+    fname = fname || slug((body.split("\n")[0]||"").replace(/^#+\s*/,""));
+    renderTree(r, fname);
+    reasonEl.innerHTML = '<b>→ '+r.area+'</b> · '+r.confidence+
+      (r.note!=="—" ? ' · '+r.note : "")+'<br>'+r.why;
+    demoMd.textContent = buildMd(text, r);   // stamp merges into existing front-matter if present
+    demoOut.classList.remove("hidden");
+  }
+  function go(){
+    if(!demoText.value.trim()){ demoText.focus(); return; }
+    showRouting(demoText.value);
+    demoOut.scrollIntoView({behavior:"smooth", block:"nearest"});
+  }
+  // expose the routing core so the converter queue can route a dropped file
+  window.Porter = { route, buildMd, slug, showRouting };
+
+  // initial empty tree + sample chips
+  renderTree({area:null}, null);
+  $("samples").innerHTML = SAMPLES.map((s,i)=>'<span class="chip" data-i="'+i+'">'+s.label+'</span>').join("");
+  $("samples").addEventListener("click",e=>{
+    const c=e.target.closest(".chip"); if(!c) return;
+    demoText.value = SAMPLES[+c.dataset.i].text; go();
+    demoOut.scrollIntoView({behavior:"smooth", block:"nearest"});
+  });
+  $("routeBtn").addEventListener("click", go);
+})();
+</script>
+</body>
+</html>

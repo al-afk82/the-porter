@@ -1,0 +1,27 @@
+Routing demo copy/paste examples
+Page: the-porter-doc-to-md.html
+
+--- Example A (expected logs/00-inbox/) ---
+# Standup - Jun 24
+
+- Finished auth refactor.
+- Starting nav redesign today.
+- Next standup Thursday.
+
+--- Example B (expected drafts/00-inbox/) ---
+# DRAFT: onboarding guide
+
+Status: rough draft, not published.
+Need to tighten intro and add screenshots.
+
+--- Example C (expected ideas/00-inbox/) ---
+# Idea: voice capture for quick notes
+
+What if the app could accept voice snippets and auto-transcribe?
+Not committed. Just parking the thought.
+
+--- Example D (expected active-projects/00-inbox/) ---
+# Q3 launch pricing decisions
+
+Finalize launch pricing this week.
+Need final review of competitor tiers before Friday.
