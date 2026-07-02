@@ -89,6 +89,11 @@ A short report, one line per judge, verified violations first, each naming the r
 exact excerpt it fired on. Evidence, never a confidence number. The content itself is never edited.
 Like the sort, this layer surfaces and records, it does not act for you.
 
+The report is what you read now. The record is what lasts. Every verified violation is also appended
+to `record/findings.jsonl`, one JSON line, write once, never overwritten. That log is the asset, see
+`record/README.md`, and a later run can read its tail as context so the system reasons against its
+own history instead of flagging what you already saw and accepted.
+
 ---
 
 ## This slice, and what is next
