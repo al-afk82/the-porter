@@ -63,6 +63,26 @@ single pass judging its own work talks itself into a verdict.
 
 ---
 
+## Two modes, content and exchange
+
+The five knowledge judges read a static piece of content, a sorted file or a draft, and judge it
+against a standard. That is content mode, and it is everything above.
+
+Some inputs are not static content but an exchange, a human turn plus the engine reasoning or output
+that answered it. An exchange can be judged for something content mode cannot see, whether the engine
+answered the right person about the right thing. That is exchange mode, and it adds two judges that
+live in `agents/alignment/` and `agents/gap/`.
+
+In exchange mode the harness first names two things as working context, the human role and scope, and
+the engine role and scope, a light profiling step the harness does inline rather than a service it
+runs. `agents/alignment/` then reasons over those two profiles and returns aligned or misaligned with
+a reason, catching the case where the engine took the wrong role before the answer ever lands.
+`agents/gap/` reasons over what the human asked against what the engine produced and returns whether
+a gap exists, partial coverage and over answering both count. Both are independent passes, kept apart
+from the knowledge pass and from each other, for the same reason verify is separate, plural judgment
+is what catches drift, and one pass judging everything at once smooths the conflicts away. On an
+exchange, run alignment and gap, then the knowledge judges, then verify.
+
 ## What it writes
 
 A short report, one line per judge, verified violations first, each naming the rule and quoting the
@@ -73,7 +93,9 @@ Like the sort, this layer surfaces and records, it does not act for you.
 
 ## This slice, and what is next
 
-This is the first slice, the five knowledge judges reasoned over in one pass, plus the separate
-verify pass. It reuses the standards already on disk, nothing new was written. The judgment agents
-that earn an independent view, the alignment check and the gap analysis, are not here yet, and the
-loggers and the record are a later layer. Build order lives in the branch, not on main.
+The five knowledge judges and the two judgment judges, alignment and gap, are in. Content mode and
+exchange mode both work, each as one or more independent reasoning passes plus the separate verify
+pass, no coordinator. What is not here yet is the record, the permanent write once log of confirmed
+findings that was Keel's real asset, and the profilers as their own folders if the inline profiling
+step turns out to need a fixed standard. Those are the next layer. Build order lives in the branch,
+not on main.

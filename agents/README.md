@@ -11,11 +11,17 @@ Every judge folder is the same three parts, so once you read one you can read th
 `ABOUT.md` is what the judge is, in one read. `CONTRACT.md` is the exact verdict it returns.
 `reference/` holds the standard it judges against, as plain markdown you edit to change its behaviour.
 
-## The judges in this slice
+## The judges
 
-`constraints` checks the hard rules that must never break. `antipatterns` matches known mistakes.
-`voice` checks writing against how you actually write. `quality` checks whether the output is good
-enough. `identity` checks that anything speaking as you stays on who you are.
+Five knowledge judges read content against a standard. `constraints` checks the hard rules that must
+never break. `antipatterns` matches known mistakes. `voice` checks writing against how you actually
+write. `quality` checks whether the output is good enough. `identity` checks that anything speaking
+as you stays on who you are.
+
+Two judgment judges read an exchange, not static content, and have no fixed standard, their logic is
+the comparison itself. `alignment` checks whether the engine answered the right person about the right
+thing, aligned or misaligned. `gap` checks what was asked against what was produced. See `REASON.md`
+for content mode versus exchange mode.
 
 ## The verdict
 
