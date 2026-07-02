@@ -30,13 +30,17 @@ carries the source it came from, the judge, and the evidence.
   "excerpt": "the exact offending text, quoted not summarised",
   "severity": "high | medium | low, or null",
   "verified": true,
+  "response": "accepted | overridden | null — your reaction when the finding was surfaced",
   "timestamp": "ISO 8601 UTC, stamped at the moment of the run"
 }
 ```
 
 `verified` is always true here, an unverified finding does not reach the log. `excerpt` is the exact
-words, never a paraphrase, so the record stays evidence rather than opinion. There is no server and no
-API, the harness in `REASON.md` appends the line when it runs, plain file, direct write.
+words, never a paraphrase, so the record stays evidence rather than opinion. `response` starts null
+and is set when you react to the surfaced finding, accepted if the flag was right, overridden if it
+fired wrongly, and it is the signal the learning layer in `feedback-loop/` reads to know which rules
+are real and which are misfiring. There is no server and no API, the harness in `REASON.md` appends
+the line when it runs, plain file, direct write.
 
 ## Reading it back
 

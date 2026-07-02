@@ -100,7 +100,10 @@ own history instead of flagging what you already saw and accepted.
 
 The five knowledge judges and the two judgment judges, alignment and gap, are in. Content mode and
 exchange mode both work, each as one or more independent reasoning passes plus the separate verify
-pass, no coordinator. What is not here yet is the record, the permanent write once log of confirmed
-findings that was Keel's real asset, and the profilers as their own folders if the inline profiling
-step turns out to need a fixed standard. Those are the next layer. Build order lives in the branch,
-not on main.
+pass, no coordinator. The record is in, `record/findings.jsonl`, the write once log that was Keel's
+real asset. And the learning layer is in, `feedback-loop/`, the analyst that reads the record, finds
+what keeps getting flagged and accepted, and drafts new rules for you to confirm, never writing to a
+judge's reference folder on its own. That closes the loop, the judges get sharper by their folders
+growing, not by retraining. What is still open is the read back step wiring the record tail into a
+run as prior context, and the profilers as their own folders if the inline profiling ever needs a
+fixed standard. Build order lives in the branch, not on main.
